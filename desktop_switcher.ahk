@@ -1,4 +1,3 @@
-#Requires AutoHotkey v1.1.33+
 #SingleInstance Force ; The script will Reload if launched while already running
 #NoEnv ; Recommended for performance and compatibility with future AutoHotkey releases
 #KeyHistory 0 ; Ensures user privacy when debugging is not needed
@@ -14,10 +13,9 @@ LastOpenedDesktop := 1
 hVirtualDesktopAccessor := DllCall("LoadLibrary", "Str", A_ScriptDir . "\VirtualDesktopAccessor.dll", "Ptr")
 global IsWindowOnDesktopNumberProc := DllCall("GetProcAddress", Ptr, hVirtualDesktopAccessor, AStr, "IsWindowOnDesktopNumber", "Ptr")
 global MoveWindowToDesktopNumberProc := DllCall("GetProcAddress", Ptr, hVirtualDesktopAccessor, AStr, "MoveWindowToDesktopNumber", "Ptr")
-global GoToDesktopNumberProc := DllCall("GetProcAddress", Ptr, hVirtualDesktopAccessor, AStr, "GoToDesktopNumber", "Ptr")
 
 ; Main
-SetKeyDelay, 75
+SetKeyDelay, 10
 mapDesktopsFromRegistry()
 OutputDebug, [loading] desktops: %DesktopCount% current: %CurrentDesktop%
 
@@ -28,8 +26,6 @@ return
 ; This function examines the registry to build an accurate list of the current virtual desktops and which one we're currently on.
 ; Current desktop UUID appears to be in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\1\VirtualDesktops
 ; List of desktops appears to be in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops
-; On Windows 11 the current desktop UUID appears to be in the same location
-; On previous versions in HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\1\VirtualDesktops
 ;
 mapDesktopsFromRegistry()
 {
@@ -39,26 +35,28 @@ mapDesktopsFromRegistry()
     IdLength := 32
     SessionId := getSessionId()
     if (SessionId) {
-
+        
         ; Older windows 10 version
         ;RegRead, CurrentDesktopId, HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\1\VirtualDesktops, CurrentVirtualDesktop
-
+        
         ; Windows 10
         ;RegRead, CurrentDesktopId, HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\%SessionId%\VirtualDesktops, CurrentVirtualDesktop
-
+        
         ; Windows 11
         RegRead, CurrentDesktopId, HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops, CurrentVirtualDesktop
-        if ErrorLevel {
-            RegRead, CurrentDesktopId, HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\%SessionId%\VirtualDesktops, CurrentVirtualDesktop
-        }
-
+        ; OutputDebug, debug -> %CurrentDesktopId%
         if (CurrentDesktopId) {
             IdLength := StrLen(CurrentDesktopId)
         }
     }
 
     ; Get a list of the UUIDs for all virtual desktops on the system
-    RegRead, DesktopList, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops, VirtualDesktopIDs
+
+    ; Windows 10
+    ; RegRead, DesktopList, HKEY_CURRENT_USER, SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops, VirtualDesktopIDs
+
+    ; Windwos 11
+    RegRead, DesktopList, HKEY_CURRENT_USER, Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops, VirtualDesktopIDs
     if (DesktopList) {
         DesktopListLength := StrLen(DesktopList)
         ; Figure out how many virtual desktops there are
@@ -123,7 +121,26 @@ _switchDesktopToTarget(targetDesktop)
     ; Fixes the issue of active windows in intermediate desktops capturing the switch shortcut and therefore delaying or stopping the switching sequence. This also fixes the flashing window button after switching in the taskbar. More info: https://github.com/pmb6tz/windows-desktop-switcher/pull/19
     WinActivate, ahk_class Shell_TrayWnd
 
-    DllCall(GoToDesktopNumberProc, Int, targetDesktop-1)
+    ; Go right until we reach the desktop we want
+    while(CurrentDesktop < targetDesktop) {
+        Send {LWin down}{LCtrl down}{Right down}{LWin up}{LCtrl up}{Right up}
+        CurrentDesktop++
+        OutputDebug, [right] target: %targetDesktop% current: %CurrentDesktop%
+    }
+
+    ; Go left until we reach the desktop we want
+    while(CurrentDesktop > targetDesktop) {
+        Send {LWin down}{LCtrl down}{Left down}{Lwin up}{LCtrl up}{Left up}
+        CurrentDesktop--
+        OutputDebug, [left] target: %targetDesktop% current: %CurrentDesktop%
+    }
+
+    ; Go left until we reach the desktop we want
+    while(CurrentDesktop > targetDesktop) {
+        Send {LWin down}{LCtrl down}{Left down}{Lwin up}{LCtrl up}{Left up}
+        CurrentDesktop--
+        OutputDebug, [left] target: %targetDesktop% current: %CurrentDesktop%
+    }
 
     ; Makes the WinActivate fix less intrusive
     Sleep, 50
